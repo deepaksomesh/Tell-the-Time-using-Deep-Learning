@@ -72,6 +72,8 @@ def plot_training(h):
     plt.plot(h.history["mae"], label="train")
     plt.plot(h.history["val_mae"], label="val")
     plt.title("Mean Abs Error")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()

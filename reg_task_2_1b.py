@@ -8,6 +8,10 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+epochs = 100
+batch_size = 128
+learning_rate = 5e-5
+
 print("Loading dataset ...")
 images = np.load("images.npy")
 labels = np.load("labels.npy")   # shape (N, 2) → [hour, minute]
@@ -46,27 +50,41 @@ def plot_training(h):
     plt.subplot(1,2,1)
     plt.plot(h.history["loss"], label="train")
     plt.plot(h.history["val_loss"], label="val")
-    plt.title("Loss (MSE)"); plt.legend()
+    plt.title("Loss (MSE)")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.grid(True)
+
     plt.subplot(1,2,2)
     plt.plot(h.history["mae"], label="train")
     plt.plot(h.history["val_mae"], label="val")
-    plt.title("MAE (hours)"); plt.legend()
-    plt.tight_layout(); plt.show()
+    plt.title("Mean Absolute Error")
+    plt.xlabel("Epochs")
+    plt.ylabel("MAE (hours)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 def build_regression_cnn(input_shape):
     inp = Input(shape=input_shape)
 
     x = Conv2D(32, (3,3), activation="relu", padding="same")(inp)
-    x = MaxPooling2D((2,2))(x); x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
+    x = BatchNormalization()(x)
 
     x = Conv2D(64, (3,3), activation="relu", padding="same")(x)
-    x = MaxPooling2D((2,2))(x); x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
+    x = BatchNormalization()(x)
 
     x = Conv2D(128, (3,3), activation="relu", padding="same")(x)
-    x = MaxPooling2D((2,2))(x); x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
+    x = BatchNormalization()(x)
 
     x = Conv2D(256, (3,3), activation="relu", padding="same")(x)
-    x = MaxPooling2D((2,2))(x); x = BatchNormalization()(x)
+    x = MaxPooling2D((2,2))(x)
+    x = BatchNormalization()(x)
 
     x = Flatten()(x)
     x = Dense(512, activation="relu")(x)
@@ -75,7 +93,7 @@ def build_regression_cnn(input_shape):
 
     model = Model(inp, out)
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
         loss="mse",
         metrics=["mae"]
     )
@@ -92,8 +110,8 @@ callbacks = [
 history = model.fit(
     X_train, y_train,
     validation_data=(X_val, y_val),
-    epochs=100,
-    batch_size=128,
+    epochs=epochs,
+    batch_size=batch_size,
     callbacks=callbacks,
     verbose=2
 )
