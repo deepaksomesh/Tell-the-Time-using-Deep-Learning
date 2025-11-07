@@ -193,16 +193,22 @@ pd.DataFrame(summaries).to_csv("results/fmnist_summary.csv", index=False)
 
 
 df = pd.DataFrame(summaries)
-top10 = df.sort_values("best_val_accuracy", ascending=False).head(10)
-plt.figure(figsize=(9,4))
-plt.barh(top10["run_id"], top10["best_val_accuracy"])
-plt.title("Top-10 Fashion-MNIST Models")
-plt.xlabel("Validation Accuracy")
-plt.gca().invert_yaxis()
+df_sorted = df.sort_values("best_val_accuracy", ascending=False).reset_index(drop=True)
+
+
+plt.figure(figsize=(12, 5))
+plt.plot(range(len(df_sorted)), df_sorted["best_val_accuracy"], marker="o", linestyle="-")
+plt.xticks(range(len(df_sorted)), df_sorted["run_id"], rotation=90, fontsize=7)
+plt.ylabel("Validation Accuracy")
+plt.xlabel("Model Configurations (shortened)")
+plt.title("Fashion-MNIST: Validation Accuracy Across All Configurations")
+plt.grid(alpha=0.3)
 plt.tight_layout()
-plt.savefig("results/fmnist_top10.png", dpi=150)
+plt.savefig("results/fmnist_all_configs_lineplot.png", dpi=150)
 plt.close()
 
+# Save top-10 JSON summary (still useful)
+top10 = df_sorted.head(10)
 top3 = top10.head(3).to_dict(orient="records")
 with open("results/top3_fmnist.json", "w") as f:
     json.dump(top3, f, indent=2)
@@ -210,78 +216,67 @@ with open("results/top3_fmnist.json", "w") as f:
 # transfer learning on CIFAR10 dataset
 (x_train_c, y_train_c), (x_test_c, y_test_c) = tf.keras.datasets.cifar10.load_data()
 y_train_c, y_test_c = y_train_c.flatten(), y_test_c.flatten()
-x_train_c, x_test_c = x_train_c.astype("float32")/255.0, x_test_c.astype("float32")/255.0
+x_train_c, x_test_c = x_train_c.astype("float32") / 255.0, x_test_c.astype("float32") / 255.0
+
 x_train_c, x_val_c, y_train_c, y_val_c = train_test_split(
     x_train_c, y_train_c, test_size=0.1, random_state=42, stratify=y_train_c)
 
-transfer_results = []
+retrain_results = []
 
-def adapt_cnn_weights(fm_path, cfg):
-    """Load FMNIST CNN, rebuild for RGB, and copy/adapt weights."""
-    try:
-        fm_model = load_model(fm_path)
-        new_model = build_cnn(cfg, input_shape=(32,32,3))
-        for fl, nl in zip(fm_model.layers, new_model.layers):
-            if isinstance(fl, Conv2D) and isinstance(nl, Conv2D):
-                old_k, old_b = fl.get_weights()
-                if old_k.shape[2] == 1:
-                    new_k = np.repeat(old_k, 3, axis=2) / 3.0
-                    nl.set_weights([new_k, old_b])
-                else:
-                    nl.set_weights(fl.get_weights())
-            elif fl.get_weights() and nl.get_weights():
-                if all(a.shape == b.shape for a, b in zip(fl.get_weights(), nl.get_weights())):
-                    nl.set_weights(fl.get_weights())
-        for layer in new_model.layers[:3]:
-            layer.trainable = False
-        new_model.compile(optimizer=get_optimizer(cfg),
-                          loss="sparse_categorical_crossentropy",
-                          metrics=["accuracy"])
-        return new_model
-    except Exception as e:
-        print(f"Transfer adaptation failed: {e}")
-        return None
+print("\n=== Retraining top-3 Fashion-MNIST models from scratch on CIFAR-10 ===")
 
 for info in top3:
     run_id, cfg = info["run_id"], info["config"]
+    print(f"\nTraining {run_id} on CIFAR-10 from scratch...")
+
     if run_id.startswith("mlp"):
+        # Flatten CIFAR-10 for MLP input
         x_train_c_flat = x_train_c.reshape((x_train_c.shape[0], -1))
         x_val_c_flat   = x_val_c.reshape((x_val_c.shape[0], -1))
         x_test_c_flat  = x_test_c.reshape((x_test_c.shape[0], -1))
         model = build_mlp(cfg)
-        print(f"\nTraining {run_id} on CIFAR-10 ...")
         hist = model.fit(x_train_c_flat, y_train_c,
                          validation_data=(x_val_c_flat, y_val_c),
-                         epochs=40, batch_size=128, verbose=2)
-        _, acc = model.evaluate(x_test_c_flat, y_test_c, verbose=0)
-        transfer_results.append({"run_id": run_id, "cifar_test_accuracy": acc, "transfer": "mlp retrain"})
+                         epochs=40, batch_size=128, verbose=2,
+                         callbacks=callbacks_for(run_id + "_cifar"))
+        _, test_acc = model.evaluate(x_test_c_flat, y_test_c, verbose=0)
+        retrain_results.append({
+            "run_id": run_id,
+            "dataset": "cifar10",
+            "config": cfg,
+            "test_accuracy": float(test_acc)
+        })
+
     else:
-        fm_model_path = f"results/models/{run_id}.h5"
-        model = adapt_cnn_weights(fm_model_path, cfg)
-        if model is None:
-            print(f"Falling back to new CNN training for {run_id}")
-            model = build_cnn(cfg, input_shape=(32,32,3))
-        print(f"\nFine-tuning {run_id} on CIFAR-10...")
+        model = build_cnn(cfg, input_shape=(32, 32, 3))
         hist = model.fit(x_train_c, y_train_c,
                          validation_data=(x_val_c, y_val_c),
-                         epochs=40, batch_size=128, verbose=2)
-        _, acc = model.evaluate(x_test_c, y_test_c, verbose=0)
-        transfer_results.append({"run_id": run_id, "cifar_test_accuracy": acc, "transfer": "cnn fine-tuned"})
+                         epochs=40, batch_size=128, verbose=2,
+                         callbacks=callbacks_for(run_id + "_cifar"))
+        _, test_acc = model.evaluate(x_test_c, y_test_c, verbose=0)
+        retrain_results.append({
+            "run_id": run_id,
+            "dataset": "cifar10",
+            "config": cfg,
+            "test_accuracy": float(test_acc)
+        })
 
-pd.DataFrame(transfer_results).to_csv("results/cifar10_transfer_summary.csv", index=False)
+# Save CIFAR-10 results
+pd.DataFrame(retrain_results).to_csv("results/cifar10_summary.csv", index=False)
 
-
-merged = pd.merge(df, pd.DataFrame(transfer_results), on="run_id", how="inner")
+# Comparison plot (FMNIST vs CIFAR-10)
+merged = pd.merge(df, pd.DataFrame(retrain_results), on="run_id", how="inner")
 if not merged.empty:
-    plt.figure(figsize=(10,5))
+    plt.figure(figsize=(10, 5))
     plt.bar(merged["run_id"], merged["final_test_accuracy"], label="FMNIST")
-    plt.bar(merged["run_id"], merged["cifar_test_accuracy"], alpha=0.7, label="CIFAR-10")
+    plt.bar(merged["run_id"], merged["test_accuracy"], alpha=0.7, label="CIFAR-10")
     plt.xticks(rotation=45, ha="right")
     plt.ylabel("Test Accuracy")
     plt.legend()
-    plt.title("Transfer Accuracy: Fashion-MNIST to CIFAR-10")
+    plt.title("Top-3 Model Performance: Fashion-MNIST vs CIFAR-10 (No Transfer Learning)")
     plt.tight_layout()
-    plt.savefig("results/transfer_accuracy.png", dpi=150)
+    plt.savefig("results/fmnist_cifar10_comparison.png", dpi=150)
     plt.close()
 
+print("\nDone retraining top-3 models on CIFAR-10!")
 print("\n Done mate!!!!!!")
