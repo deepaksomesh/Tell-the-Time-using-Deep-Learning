@@ -6,14 +6,18 @@ from tensorflow.keras.layers import (Conv2D, MaxPooling2D, BatchNormalization,
 from tensorflow.keras.models import Model
 import matplotlib.pyplot as plt
 
-n_classes_list = [12, 24, 720]   # 12 (1-hr bins), 24 (30-min bins), 720 (1-min bins)
+# Initializing the required parameters (Episodes, Mini-batching, Learning rate)
+# 12 (1-hr bins), 24 (30-min bins), 720 (1-min bins)
+n_classes_list = [12, 24, 720]
 epochs = 60
 batch_size = 128
 learning_rate = 1e-4
 
+# Loading and processing the data
+
 print("Loading data...")
 images = np.load("images.npy")
-labels = np.load("labels.npy")   # shape (N, 2): [hour, minute]
+labels = np.load("labels.npy")
 
 # Convert labels to total minutes [0,720)
 hours = labels[:, 0] % 12
@@ -37,29 +41,31 @@ X_val, X_test, y_val, y_test = train_test_split(
 
 print(f"Train: {X_train.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
 
+# Converting the total minutes to class index given number of classes
+# and the bins are equal intervals around the clock (cyclic).
+
 def minutes_to_class(minutes, n_classes):
-    """
-    Convert total minutes to class index given number of classes.
-    Bins are equal intervals around the clock (cyclic).
-    """
     bin_size = 720 / n_classes
     classes = np.floor(minutes / bin_size).astype(int)
     classes = np.clip(classes, 0, n_classes - 1)
     return classes
 
+# Mapping class index back to central minute of its interval.
+
 def class_to_center_minute(class_idx, n_classes):
-    """Map class index back to central minute of its interval."""
     bin_size = 720 / n_classes
     return ((class_idx + 0.5) * bin_size) % 720
 
+# Common Sense Error - Mean circular difference (minimizing around the clock).
+
 def common_sense_error(y_true_minutes, y_pred_minutes):
-    """Mean circular difference (minimizing around the clock)."""
     diff = np.abs(y_true_minutes - y_pred_minutes) % 720
     diff = np.minimum(diff, 720 - diff)
     return np.mean(diff)
 
+# Visualizing the loss and accuracy
+
 def plot_training(h, n_classes):
-    """Visualize loss and accuracy."""
     plt.figure(figsize=(10, 4))
     plt.subplot(1, 2, 1)
     plt.plot(h.history["loss"], label="train")
@@ -80,6 +86,8 @@ def plot_training(h, n_classes):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+# A simple CNN architecture with batch normalization to train the model
 
 def build_base_cnn(input_shape, n_classes):
     inp = Input(shape=input_shape)
@@ -109,12 +117,13 @@ def build_base_cnn(input_shape, n_classes):
     )
     return model
 
+# Training and Results using test set, the plots and CSE
+
 results = {}
 
 for n_classes in n_classes_list:
     print(f"\nTraining for {n_classes} classes\n")
 
-    # Convert to discrete class indices
     y_train_cls = minutes_to_class(y_train, n_classes)
     y_val_cls = minutes_to_class(y_val, n_classes)
     y_test_cls = minutes_to_class(y_test, n_classes)
@@ -148,5 +157,5 @@ for n_classes in n_classes_list:
     plot_training(history, n_classes)
 
 for n, res in results.items():
-    print(f"{n:>4} classes → acc: {res['accuracy']:.3f}, "
+    print(f"{n:>4} classes - acc: {res['accuracy']:.3f}, "
           f"common-sense err: {res['common_sense_error_min']:.2f} min")

@@ -8,13 +8,17 @@ from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+# Initializing the required parameters (Episodes, Mini-batching, Learning rate)
+
 epochs = 100
 batch_size = 128
 learning_rate = 5e-5
 
+# Loading and processing the data (Converting labels to total minutes, Normalizing pixel values)
+
 print("Loading dataset ...")
 images = np.load("images.npy")
-labels = np.load("labels.npy")   # shape (N, 2) → [hour, minute]
+labels = np.load("labels.npy")
 
 valid = (
     (labels[:,0] >= 0) & (labels[:,0] < 24) &
@@ -31,6 +35,8 @@ images = images.astype("float32") / 255.0
 if images.ndim == 3:
     images = images[..., np.newaxis]
 
+# Train/Validation/Test Split of the data (80/10/10)
+
 X_train, X_temp, y_train, y_temp = train_test_split(
     images, targets, test_size=0.2, random_state=42, shuffle=True
 )
@@ -39,11 +45,14 @@ X_val, X_test, y_val, y_test = train_test_split(
 )
 print(f"Train: {X_train.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
 
+# Common Sense Error - Mean circular difference (minimizing around the clock).
+
 def common_sense_error(y_true, y_pred):
-    """Circular mean absolute error in minutes (0–12 h cycle)."""
     diff = np.abs(y_true - y_pred) % 12.0
     diff = np.minimum(diff, 12.0 - diff)
     return np.mean(diff * 60.0)
+
+# Visualizing the loss MSE and MAE metrics
 
 def plot_training(h):
     plt.figure(figsize=(10,4))
@@ -66,6 +75,8 @@ def plot_training(h):
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+#A regression CNN architecture with Adam optimizer, MSE loss, and MAE metrics
 
 def build_regression_cnn(input_shape):
     inp = Input(shape=input_shape)
@@ -99,6 +110,9 @@ def build_regression_cnn(input_shape):
     )
     return model
 
+# Training the model with early stopping and reduce learning rate on plateau
+# and Results in MAE and Common Sense Error.
+
 model = build_regression_cnn(X_train.shape[1:])
 model.summary()
 
@@ -124,5 +138,3 @@ common_err = common_sense_error(y_test, preds)
 
 print(f"MAE (hours):  {mae_hours:.4f}")
 print(f"Common-sense MAE: {common_err:.2f} minutes")
-
-model.save("tell_time_regression_task2b.h5")
