@@ -29,7 +29,7 @@ images = images.astype("float32") / 255.0
 
 # Add channel dimension if missing
 if len(images.shape) == 3:
-    images = images[..., np.newaxis]  # (N, H, W, 1)
+    images = images[..., np.newaxis]
 
 # Train/val/test split (80/10/10)
 X_train, X_temp, y_train, y_temp = train_test_split(
